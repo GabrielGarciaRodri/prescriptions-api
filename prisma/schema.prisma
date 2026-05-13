@@ -1,0 +1,110 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  admin
+  doctor
+  patient
+}
+
+enum PrescriptionStatus {
+  pending
+  consumed
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // hash bcrypt
+  name      String
+  role      Role
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Perfiles 1-a-1 (relación inversa, opcional según el rol)
+  doctorProfile  Doctor?
+  patientProfile Patient?
+
+  // Refresh tokens del usuario
+  refreshTokens  RefreshToken[]
+
+  @@index([role])
+}
+
+model Doctor {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @unique
+  specialty String?
+  license   String?  // nº de tarjeta profesional (opcional, suma realismo)
+
+  prescriptions Prescription[] @relation("AuthoredBy")
+}
+
+model Patient {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String    @unique
+  birthDate DateTime?
+  phone     String?
+
+  prescriptions Prescription[]
+}
+
+model Prescription {
+  id         String              @id @default(cuid())
+  code       String              @unique  // formato RX-XXXXXXXX
+  status     PrescriptionStatus  @default(pending)
+  notes      String?
+  createdAt  DateTime            @default(now())
+  consumedAt DateTime?
+
+  patient   Patient @relation(fields: [patientId], references: [id])
+  patientId String
+
+  author   Doctor @relation("AuthoredBy", fields: [authorId], references: [id])
+  authorId String
+
+  items PrescriptionItem[]
+
+  // Índices: filtros típicos en /admin/prescriptions y /me/prescriptions
+  @@index([status, createdAt])   // listados filtrados por estado, ordenados por fecha
+  @@index([patientId, status])   // bandeja del paciente filtrada
+  @@index([authorId, createdAt]) // listado del médico
+  @@index([createdAt])           // métrica byDay
+}
+
+model PrescriptionItem {
+  id             String  @id @default(cuid())
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  prescriptionId String
+  name           String
+  dosage         String?
+  quantity       Int?
+  instructions   String?
+
+  @@index([prescriptionId])
+}
+
+model RefreshToken {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique               // SHA-256 del refresh token
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  replacedById String?                          // id del token que lo reemplazó (rotación)
+  userAgent    String?                          // para debug/auditoría
+  ip           String?
+
+  @@index([userId])
+  @@index([tokenHash])
+}
