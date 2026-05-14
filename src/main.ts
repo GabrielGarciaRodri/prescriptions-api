@@ -1,21 +1,25 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
 
+  app.set('trust proxy', 1);
+  
   // Seguridad
   app.use(helmet());
 
   // CORS
+  const origin = config.get<string>('APP_ORIGIN') ?? 'http://localhost:3001';
   app.enableCors({
-    origin: config.get<string>('APP_ORIGIN') ?? 'http://localhost:3001',
+    origin: origin === '*' ? true : origin.split(',').map((s) => s.trim()),
     credentials: true,
   });
 
@@ -35,8 +39,8 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const port = config.get<number>('PORT') ?? 3000;
-  await app.listen(port);
-  console.log(`Backend corriendo en http://localhost:${port}/api`);
+  const port = Number(config.get<string>('PORT')) || 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log(`Backend listening on port ${port} (prefix /api)`);
 }
 bootstrap();
